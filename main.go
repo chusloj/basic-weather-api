@@ -33,6 +33,19 @@ func (s *SMSSender) Send(data *Data) error {
 	return nil
 }
 
+type EmailSender struct {
+	email string
+}
+
+func NewEmailSender(email string) *EmailSender {
+	return &EmailSender{email: email}
+}
+
+func (e *EmailSender) Send(data *Data) error {
+	fmt.Println("sending weather to email: ", e.email)
+	return nil
+}
+
 type Data struct {
 	Elevation float64        `json:"elevation"`
 	Hourly    map[string]any `json:"hourly"`
@@ -40,13 +53,13 @@ type Data struct {
 
 type WPoller struct {
 	closech chan struct{}
-	sender  Sender
+	senders []Sender
 }
 
-func NewWPoller(sender Sender) *WPoller {
+func NewWPoller(senders []Sender) *WPoller {
 	return &WPoller{
 		closech: make(chan struct{}),
-		sender:  sender,
+		senders: senders,
 	}
 }
 
@@ -76,16 +89,16 @@ main_loop:
 }
 
 func (wp *WPoller) close() {
+	fmt.Println("closing the channel")
 	close(wp.closech)
 }
 
 func (wp *WPoller) handleData(data *Data) error {
-	// return wp.sendWeatherOverSMS("719", data)
-	return wp.sender.Send(data)
-}
-
-func (wp *WPoller) sendWeatherOverSMS(number string, data *Data) error {
-	fmt.Println("Sending weather to: ", number)
+	for _, s := range wp.senders {
+		if err := s.Send(data); err != nil {
+			log.Fatal(err)
+		}
+	}
 	return nil
 }
 
@@ -108,6 +121,11 @@ func getWeatherResults(lat, long float64) (*Data, error) {
 
 func main() {
 	smsSender := NewSMSSender("719")
-	wpoller := NewWPoller(smsSender)
-	wpoller.start()
+	emailSender := NewEmailSender("test@gmail.com")
+	wpoller := NewWPoller([]Sender{smsSender, emailSender})
+	go wpoller.start()
+
+	timer := time.NewTimer(time.Second * 9)
+	<-timer.C
+	wpoller.close()
 }
